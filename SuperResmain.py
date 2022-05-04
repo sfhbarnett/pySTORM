@@ -3,9 +3,10 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import sys
+import scipy.optimize as opt
 
 # set matplotlib backend so figure isn't rendered to screen
-matplotlib.use('Agg')
+#matplotlib.use('Agg')
 
 class TiffStack:
     """
@@ -100,7 +101,7 @@ def filter_peaks(peaks, image, radius=2):
     filteredlist = []
     peaksarray = np.array(peaks)
     # euclidean distance in which peaks that are closer than get checked *left squared
-    radiusdistance =  radius**2 + 1
+    radiusdistance = radius**2 + 1
     for index, pointtocheck in enumerate(peaksarray):
         x = pointtocheck[0]
         y = pointtocheck[1]
@@ -117,6 +118,35 @@ def filter_peaks(peaks, image, radius=2):
         if image[x, y] == max(vals):
             filteredlist.append([x, y])
     return filteredlist
+
+def gaussian2dFunc(xdata_tuple, amplitude, xo, yo, sigma_x, sigma_y, offset):
+    (x, y) = xdata_tuple
+    xo = float(xo)
+    yo = float(yo)
+    # a = (np.cos(theta)**2)/(2*sigma_x**2) + (np.sin(theta)**2)/(2*sigma_y**2)
+    # b = -(np.sin(2*theta))/(4*sigma_x**2) + (np.sin(2*theta))/(4*sigma_y**2)
+    # c = (np.sin(theta)**2)/(2*sigma_x**2) + (np.cos(theta)**2)/(2*sigma_y**2)
+    g = offset + amplitude * np.exp(- ((((x - xo)**2)/(2 * sigma_x**2)) + (((y - yo)**2)/(2 * sigma_y**2))))
+    # g = offset + amplitude*np.exp( - (a*((x-xo)**2) + 2*b*(x-xo)*(y-yo)
+    #                    + c*((y-yo)**2)))
+    return g.ravel()
+
+
+def fitpeaks(peaks, image):
+    radius = 3
+    x = np.linspace(0, radius*2-1, radius*2)
+    y = np.linspace(0, radius*2-1, radius*2)
+    x, y = np.meshgrid(x, y)
+    (width, height) = image.shape
+    for peak in peaks:
+        if peak[0] - radius < 0 or peak[0] + radius > width or peak[1] - radius < 0 or peak[1] + radius > height:
+            continue
+        crop = image[peak[0]-radius:peak[0]+radius, peak[1]-radius:peak[1]+radius]
+        initial_guess = (np.max(crop), radius, radius, radius/2, radius/2, np.min(crop))
+        try:
+            popt, pcov = opt.curve_fit(gaussian2dFunc, (x, y), crop.reshape(-1), p0=initial_guess)
+        except RuntimeError:
+            print("Bad Fit")
 
 
 def plot_and_save(image, peaks, outputpath, index):
@@ -171,8 +201,9 @@ def main(inputpath, outputpath):
         pl = find_peaks(background_subtracted)
         # Filter peaks that are part of same smudge
         fp = filter_peaks(pl, image, radius=2)
+        fitpeaks(pl, image)
         # Plot and save the output
-        plot_and_save(image, fp, outputpath, tifindex)
+        #plot_and_save(image, fp, outputpath, tifindex)
 
     print(f'Script finished - processed {imagecontainer.nfiles} image(s)')
 
@@ -193,7 +224,8 @@ def run_from_cli():
 
         # inputpath = sys.argv[1]
         # outputpath = sys.argv[2]
-        inputpath = 'file1.tif'
+        inputpath = '/Users/sbarnett/Documents/code/pyPALM/frames1000.tif'
+
         outputpath = 'outfile'
         main(inputpath, outputpath)
 
