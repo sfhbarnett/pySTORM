@@ -4,9 +4,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import sys
 import scipy.optimize as opt
+import pandas as pd
 
-# set matplotlib backend so figure isn't rendered to screen
-#matplotlib.use('Agg')
 
 class TiffStack:
     """
@@ -132,7 +131,7 @@ def gaussian2dFunc(xdata_tuple, amplitude, xo, yo, sigma_x, sigma_y, offset):
     return g.ravel()
 
 
-def fitpeaks(peaks, image):
+def fitpeaks(peaks, image, fits):
     radius = 3
     x = np.linspace(0, radius*2-1, radius*2)
     y = np.linspace(0, radius*2-1, radius*2)
@@ -145,6 +144,9 @@ def fitpeaks(peaks, image):
         initial_guess = (np.max(crop), radius, radius, radius/2, radius/2, np.min(crop))
         try:
             popt, pcov = opt.curve_fit(gaussian2dFunc, (x, y), crop.reshape(-1), p0=initial_guess)
+            popt[1] += peak[0]
+            popt[2] += peak[1]
+            fits.append(popt)
         except RuntimeError:
             print("Bad Fit")
 
@@ -191,8 +193,10 @@ def main(inputpath, outputpath):
     """
 
     imagecontainer = TiffStack(inputpath)
+    fits = []
 
     for tifindex in range(imagecontainer.nfiles):
+        print(f"processing file: {tifindex}")
         # Load image
         image = imagecontainer.getimage(tifindex)
         # Background subtract image
@@ -201,7 +205,13 @@ def main(inputpath, outputpath):
         pl = find_peaks(background_subtracted)
         # Filter peaks that are part of same smudge
         fp = filter_peaks(pl, image, radius=2)
-        fitpeaks(pl, image)
+        # Fit the peaks
+        fitpeaks(pl, image, fits)
+        fits2 = np.asarray(fits)
+        plt.plot(fits2[:,1],fits2[:,2],'o')
+        plt.show()
+        plt.draw()
+        #plot.plot(fits[])
         # Plot and save the output
         #plot_and_save(image, fp, outputpath, tifindex)
 
