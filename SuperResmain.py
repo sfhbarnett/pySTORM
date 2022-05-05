@@ -152,14 +152,15 @@ def fitpeaks(peaks, image, fits) -> list:
         lower = (0.2*np.max(crop), 0, 0, 0, 0, 0)
         upper = (5*np.max(crop), radius*2+1, radius*2+1, radius*2, radius*2, np.max(crop))
         try:
-            popt, pcov = opt.curve_fit(gaussian2dFunc, (x, y), crop.reshape(-1), p0=initial_guess, bounds=(lower, upper),ftol=0.5, xtol=0.5)
-            popt[1] += peaks[c,0]
-            popt[2] += peaks[c,1]
+            popt, pcov = opt.curve_fit(gaussian2dFunc, (x, y), crop.reshape(-1), p0=initial_guess, bounds=(lower, upper), ftol=0.5, xtol=0.5)
+            #popt[1] += peaks[c, 0]
+            #popt[2] += peaks[c, 1]
             fits.append(popt)
             c += 1
         except RuntimeError:
             print("Bad Fit")
             c += 1
+    return fits
 
 
 def getcrop(image, peaks, radius=3):
@@ -202,6 +203,18 @@ def plot_and_save(image, peaks, outputpath, index):
     print(f'processed image {index+1} and found {len(peaks)} peaks')
 
 
+def render(points, subsampling):
+    points = np.asarray(points)
+    print(points)
+    x = points[:,1]
+    y = points[:,2]
+    rendered = np.zeros((round(np.max(x)*subsampling,)+1, round(np.max(y)*subsampling)+1))
+    for i in range(len(x)):
+        rendered[round(x[i]*subsampling), round(y[i]*subsampling)] += 1
+    return rendered
+
+
+
 def main(inputpath, outputpath):
     """
     Takes a path to an image file, then performs the folling operations:
@@ -221,30 +234,22 @@ def main(inputpath, outputpath):
     for tifindex in range(imagecontainer.nfiles):
         print(f"processing image: {tifindex}")
         # Load image
-        start = time.time()
         image = imagecontainer.getimage(tifindex)
-        print(f'load image {time.time() - start}')
         # Background subtract image
         #background_subtracted1 = np.asarray(rolling_ball(image, radius=3))
-        start = time.time()
         background_subtracted = scikit_rollingball(image)
-        print(f'background subtract {time.time() - start}')
         # Find peaks in the image
-        start = time.time()
         pl = find_peaks(background_subtracted)
-        print(f'find peaks {time.time()-start}')
         # Filter peaks that are part of same smudge
-        start = time.time()
         fp = filter_peaks(pl, image, radius=2)
-        print(f'filter peaks {time.time() - start}')
         # Fit the peaks
         pl = np.asarray(pl)
-        start = time.time()
-        fitpeaks(pl, image, fits)
-        print(f'fit peaks {time.time() - start}')
-        fits2 = np.asarray(fits)
+        fits = fitpeaks(pl, image, fits)
         if tifindex % 100 == 1:
-            plt.plot(fits2[:,1],fits2[:,2],'o')
+            #rendered = render(fits, 10)
+            fits = np.asarray(fits)
+            plt.plot(fits[:, 1], fits[:, 2], 'o')
+            #plt.imshow(rendered)
             plt.show()
             plt.draw()
         #plot.plot(fits[])
