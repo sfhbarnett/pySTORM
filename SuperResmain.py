@@ -4,7 +4,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import sys
 import scipy.optimize as opt
-import pandas as pd
+from skimage import restoration, morphology, filters
+import time
+from numba import jit
+
 
 
 class TiffStack:
@@ -24,7 +27,7 @@ class TiffStack:
         return self.ims.pages[index].asarray()
 
 
-def rolling_ball(image, radius=3):
+def rolling_ball(image, radius=3) -> list:
     """
     Rolling Ball/Sliding Window background subtraction - Takes an m x n image and loops over each pixel, subtracting
     the mean value around that pixel within a specified radius.
@@ -58,7 +61,12 @@ def rolling_ball(image, radius=3):
     return bgsubtracted
 
 
-def find_peaks(image):
+def scikit_rollingball(image):
+    strel = morphology.disk(radius=3)
+    background = morphology.white_tophat(image, strel)
+    return filters.gaussian(background,sigma=0.5)
+
+def find_peaks(image) -> list:
     """
     Finds peaks in a clean image, ignores points with in a 1 pixel boundary of image edge
     Checks if the pixels in a radius of 1 (i.e. 3x3) are all lower in intensity than the center
@@ -87,7 +95,7 @@ def find_peaks(image):
     return peaklist
 
 
-def filter_peaks(peaks, image, radius=2):
+def filter_peaks(peaks, image, radius=2) -> list:
     """
     Filters a list of peaks for to remove those that are deemed too close, if a peak (p) has other peaks (op)
     that are close and brighter than it, then p is not added to the new list. if p is the brightest peak in p and op
@@ -118,6 +126,7 @@ def filter_peaks(peaks, image, radius=2):
             filteredlist.append([x, y])
     return filteredlist
 
+@jit
 def gaussian2dFunc(xdata_tuple, amplitude, xo, yo, sigma_x, sigma_y, offset):
     (x, y) = xdata_tuple
     xo = float(xo)
@@ -131,24 +140,38 @@ def gaussian2dFunc(xdata_tuple, amplitude, xo, yo, sigma_x, sigma_y, offset):
     return g.ravel()
 
 
-def fitpeaks(peaks, image, fits):
+def fitpeaks(peaks, image, fits) -> list:
     radius = 3
     x = np.linspace(0, radius*2-1, radius*2)
     y = np.linspace(0, radius*2-1, radius*2)
     x, y = np.meshgrid(x, y)
+    crops = getcrop(image, peaks)
+    c = 0
+    for crop in crops:
+        initial_guess = (np.max(crop), radius, radius, radius/2, radius/2, np.min(crop))
+        lower = (0.2*np.max(crop), 0, 0, 0, 0, 0)
+        upper = (5*np.max(crop), radius*2+1, radius*2+1, radius*2, radius*2, np.max(crop))
+        try:
+            popt, pcov = opt.curve_fit(gaussian2dFunc, (x, y), crop.reshape(-1), p0=initial_guess, bounds=(lower, upper),ftol=0.5, xtol=0.5)
+            popt[1] += peaks[c,0]
+            popt[2] += peaks[c,1]
+            fits.append(popt)
+            c += 1
+        except RuntimeError:
+            print("Bad Fit")
+            c += 1
+
+
+def getcrop(image, peaks, radius=3):
+    crop = np.zeros((len(peaks),radius*2,radius*2))
     (width, height) = image.shape
+    counter = 0
     for peak in peaks:
         if peak[0] - radius < 0 or peak[0] + radius > width or peak[1] - radius < 0 or peak[1] + radius > height:
             continue
-        crop = image[peak[0]-radius:peak[0]+radius, peak[1]-radius:peak[1]+radius]
-        initial_guess = (np.max(crop), radius, radius, radius/2, radius/2, np.min(crop))
-        try:
-            popt, pcov = opt.curve_fit(gaussian2dFunc, (x, y), crop.reshape(-1), p0=initial_guess)
-            popt[1] += peak[0]
-            popt[2] += peak[1]
-            fits.append(popt)
-        except RuntimeError:
-            print("Bad Fit")
+        crop[counter] = image[peak[0]-radius:peak[0]+radius, peak[1]-radius:peak[1]+radius]
+        counter+=1
+    return crop[0:counter, :, :]
 
 
 def plot_and_save(image, peaks, outputpath, index):
@@ -196,21 +219,34 @@ def main(inputpath, outputpath):
     fits = []
 
     for tifindex in range(imagecontainer.nfiles):
-        print(f"processing file: {tifindex}")
+        print(f"processing image: {tifindex}")
         # Load image
+        start = time.time()
         image = imagecontainer.getimage(tifindex)
+        print(f'load image {time.time() - start}')
         # Background subtract image
-        background_subtracted = np.asarray(rolling_ball(image, radius=3))
+        #background_subtracted1 = np.asarray(rolling_ball(image, radius=3))
+        start = time.time()
+        background_subtracted = scikit_rollingball(image)
+        print(f'background subtract {time.time() - start}')
         # Find peaks in the image
+        start = time.time()
         pl = find_peaks(background_subtracted)
+        print(f'find peaks {time.time()-start}')
         # Filter peaks that are part of same smudge
+        start = time.time()
         fp = filter_peaks(pl, image, radius=2)
+        print(f'filter peaks {time.time() - start}')
         # Fit the peaks
+        pl = np.asarray(pl)
+        start = time.time()
         fitpeaks(pl, image, fits)
+        print(f'fit peaks {time.time() - start}')
         fits2 = np.asarray(fits)
-        plt.plot(fits2[:,1],fits2[:,2],'o')
-        plt.show()
-        plt.draw()
+        if tifindex % 100 == 1:
+            plt.plot(fits2[:,1],fits2[:,2],'o')
+            plt.show()
+            plt.draw()
         #plot.plot(fits[])
         # Plot and save the output
         #plot_and_save(image, fp, outputpath, tifindex)
