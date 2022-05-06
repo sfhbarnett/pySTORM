@@ -126,7 +126,7 @@ def filter_peaks(peaks, image, radius=2) -> list:
             filteredlist.append([x, y])
     return filteredlist
 
-@jit
+
 def gaussian2dFunc(xdata_tuple, amplitude, xo, yo, sigma_x, sigma_y, offset):
     (x, y) = xdata_tuple
     xo = float(xo)
@@ -152,9 +152,9 @@ def fitpeaks(peaks, image, fits) -> list:
         lower = (0.2*np.max(crop), 0, 0, 0, 0, 0)
         upper = (5*np.max(crop), radius*2+1, radius*2+1, radius*2, radius*2, np.max(crop))
         try:
-            popt, pcov = opt.curve_fit(gaussian2dFunc, (x, y), crop.reshape(-1), p0=initial_guess, bounds=(lower, upper), ftol=0.5, xtol=0.5)
-            #popt[1] += peaks[c, 0]
-            #popt[2] += peaks[c, 1]
+            popt, pcov = opt.curve_fit(gaussian2dFunc, (x, y), crop.reshape(-1), p0=initial_guess, bounds=(lower, upper), ftol=0.01, xtol=0.01)
+            popt[1] += peaks[c, 0]
+            popt[2] += peaks[c, 1]
             fits.append(popt)
             c += 1
         except RuntimeError:
@@ -164,14 +164,14 @@ def fitpeaks(peaks, image, fits) -> list:
 
 
 def getcrop(image, peaks, radius=3):
-    crop = np.zeros((len(peaks),radius*2,radius*2))
+    crop = np.zeros((len(peaks), radius*2, radius*2))
     (width, height) = image.shape
     counter = 0
     for peak in peaks:
         if peak[0] - radius < 0 or peak[0] + radius > width or peak[1] - radius < 0 or peak[1] + radius > height:
             continue
         crop[counter] = image[peak[0]-radius:peak[0]+radius, peak[1]-radius:peak[1]+radius]
-        counter+=1
+        counter += 1
     return crop[0:counter, :, :]
 
 
@@ -205,9 +205,8 @@ def plot_and_save(image, peaks, outputpath, index):
 
 def render(points, subsampling):
     points = np.asarray(points)
-    print(points)
-    x = points[:,1]
-    y = points[:,2]
+    x = points[:, 1]
+    y = points[:, 2]
     rendered = np.zeros((round(np.max(x)*subsampling,)+1, round(np.max(y)*subsampling)+1))
     for i in range(len(x)):
         rendered[round(x[i]*subsampling), round(y[i]*subsampling)] += 1
@@ -245,13 +244,13 @@ def main(inputpath, outputpath):
         # Fit the peaks
         pl = np.asarray(pl)
         fits = fitpeaks(pl, image, fits)
-        if tifindex % 100 == 1:
-            #rendered = render(fits, 10)
-            fits = np.asarray(fits)
-            plt.plot(fits[:, 1], fits[:, 2], 'o')
+        #if tifindex % 10000 == 1:
+            #rendered = render(fits, 5)
+            #fits = np.asarray(fits)
+            #plt.plot(fits[:, 1], fits[:, 2], 'o')
             #plt.imshow(rendered)
-            plt.show()
-            plt.draw()
+            #plt.show()
+            #plt.draw()
         #plot.plot(fits[])
         # Plot and save the output
         #plot_and_save(image, fp, outputpath, tifindex)
